@@ -1193,3 +1193,48 @@ body {
 .attach-btn, .send-btn {
   align-self: flex-end !important;
 }
+
+/* User info in menu */
+.menu-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: var(--hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.menu-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.menu-user-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.menu-user-email {
+  font-size: 12px;
+  color: var(--text-secondary);
+  
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* Logout button (red accent on hover) */
+.logout-item:hover {
+  background: #fee2e2 !important;
+  color: #ef4444;
+}
+
+.logout-item:hover .menu-icon svg {
+  stroke: #ef4444;
+}

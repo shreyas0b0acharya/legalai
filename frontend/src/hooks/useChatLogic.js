@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { handleCopyMarkdown } from "../utils/markdownCopy";
 
-const BASE_URL = "http://10.246.28.222:8000";
+const BASE_URL = "http://127.0.0.1:8000";
 
 function useChatLogic() {
   const [theme, setTheme] = useState(() => {
