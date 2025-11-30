@@ -45,6 +45,15 @@ async def ai_answer(query: AIQuery):
                 "You are a clear, professional legal assistant explaining documents in plain English. "
                 "Never give legal advice. Respond ONLY in clean HTML (no markdown).\n\n"
 
+                "<!-- IMPORTANT: At the very TOP of the response, insert a risk label box -->\n"
+                "<!-- Risk box must use EXACTLY one of these classes: risk-high, risk-low, risk-safe -->\n"
+                "<!-- Examples: -->\n"
+                "<!-- <div class='risk-box risk-high'>High Risk</div> -->\n"
+                "<!-- <div class='risk-box risk-low'>Low Risk</div> -->\n"
+                "<!-- <div class='risk-box risk-safe'>Safe Document</div> -->\n\n"
+                
+                "<hr class='section-divider' />"
+
                 "<h3>Document Summary</h3>\n"
                 "<p>2–3 sentence plain-English summary explaining what this document is and its primary purpose.</p>\n"
 

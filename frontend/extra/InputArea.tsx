@@ -1,7 +1,23 @@
+// src/components/InputArea.tsx
 import React from "react";
-import "./inputarea.css";
+import { Message } from "../src/types/types";
 
-function InputArea({
+interface InputAreaProps {
+  fileName: string | null;
+  messages: Message[];
+  question: string;
+  setQuestion: (question: string) => void;
+  loading: boolean;
+  uploading: boolean;
+  isStreaming: boolean;
+  setShowNewChatModal: (show: boolean) => void;
+  handleAsk: () => void;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  handleFileSelect: (file: File | null) => void;
+  stopStreamingRef: React.MutableRefObject<boolean>;
+}
+
+const InputArea: React.FC<InputAreaProps> = ({
   fileName,
   messages,
   question,
@@ -14,7 +30,7 @@ function InputArea({
   fileInputRef,
   handleFileSelect,
   stopStreamingRef,
-}) {
+}) => {
   return (
     <div>
       {!fileName && messages.length === 0 ? (
@@ -27,6 +43,7 @@ function InputArea({
             <button
               className="attach-btn"
               onClick={() => setShowNewChatModal(true)}
+              type="button"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path
@@ -42,22 +59,23 @@ function InputArea({
               className="chat-input"
               placeholder="Type your question here..."
               value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuestion(e.target.value)}
+              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleAsk();
                 }
               }}
               rows={1}
+              style={{ resize: "none" }}
             />
 
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf"
-              onChange={(e) => {
-                const f = e.target.files[0];
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                const f = e.target.files?.[0] || null;
                 if (f) handleFileSelect(f);
               }}
               style={{ display: "none" }}
@@ -79,12 +97,15 @@ function InputArea({
                   !fileName ||
                   uploading
                 }
+                type="button"
               >
                 {isStreaming ? (
+                  // STOP ICON
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
                 ) : (
+                  // SEND ICON
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                   </svg>
@@ -96,6 +117,6 @@ function InputArea({
       )}
     </div>
   );
-}
+};
 
 export default InputArea;

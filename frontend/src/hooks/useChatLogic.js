@@ -1,5 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 import { handleCopyMarkdown } from "../utils/markdownCopy";
+import { db } from "../../firebase";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  onSnapshot,
+  doc,
+  deleteDoc,
+  updateDoc,
+  getDocs,
+} from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 const BASE_URL = "http://127.0.0.1:8000";
 
@@ -17,6 +31,11 @@ function useChatLogic() {
     setTheme((prev) => (prev === "light" ? "dark" : "light"));
   };
 
+  
+
+  // 🆕 Added for message storage
+  const currentFileIdRef = useRef(null);
+
   const [fileName, setFileName] = useState(null);
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
@@ -30,6 +49,14 @@ function useChatLogic() {
   const [editingText, setEditingText] = useState("");
   const [toastMessage, setToastMessage] = useState(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(true);
+  const [messageLoading, setMessageLoading] = useState(true);
+  const [displayFileName, setDisplayFileName] = useState(null);
+  const [displayFileId, setDisplayFileId] = useState(null); // <-- new
+
+
+
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -39,6 +66,116 @@ function useChatLogic() {
   const userScrolledUpRef = useRef(false);
   const stopStreamingRef = useRef(false);
 
+  // 📌 Load all files
+  useEffect(() => {
+  const user = getAuth().currentUser;
+  if (!user) return;
+
+  setFilesLoading(true);
+
+  const q = query(
+    collection(db, "users", user.uid, "files"),
+    orderBy("createdAt", "desc")
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    setFiles(snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })));
+
+    setFilesLoading(false);  // ✔ correct placement
+  });
+}, []);
+
+
+useEffect(() => {
+  // if no file id -> not loading
+  if (!displayFileId) {
+    setMessageLoading(false);
+    setMessages([]); // optional: clear messages when no file selected
+    return;
+  }
+
+  setMessageLoading(true);
+
+  const user = getAuth().currentUser;
+  if (!user) {
+    setMessageLoading(false);
+    return;
+  }
+
+  const msgRef = collection(
+    db,
+    "users",
+    user.uid,
+    "files",
+    displayFileId,
+    "messages"
+  );
+  const q = query(msgRef, orderBy("createdAt", "asc"));
+
+  const unsub = onSnapshot(q, (snapshot) => {
+    const loaded = snapshot.docs.map((doc) => doc.data());
+    setMessages(loaded);
+    setMessageLoading(false);
+  });
+
+  return () => unsub();
+}, [displayFileId]);
+
+  function extractRisk(html) {
+    const match = html.match(/risk-(high|low|safe)/i);
+    return match ? match[1].toLowerCase() : "not-analysed";
+  }
+
+function extractPreviewText(text) {
+  if (!text) return "Preview unavailable";
+
+  // Remove markdown & HTML
+  let cleaned = text.replace(/<\/?[^>]+(>|$)/g, "");
+
+  // Find "summary" keyword (case-insensitive)
+  const parts = cleaned.split(/summary[:\-]*/i);
+
+  // If "summary" exists, take everything after it
+  cleaned = parts.length > 1 ? parts[1].trim() : cleaned.trim();
+
+  // Take first 2 lines only
+  const lines = cleaned.split("\n").filter((l) => l.trim() !== "");
+  const firstTwo = lines.slice(0, 2).join(" ");
+
+  return firstTwo.slice(0, 160); // limit length if needed
+}
+
+
+
+
+  // ✨ Save message to Firestore
+  const saveMessage = async (msg) => {
+    const user = getAuth().currentUser;
+    if (!user) return;
+
+    const fileId = currentFileIdRef.current;
+    if (!fileId) return;
+
+    const msgRef = collection(
+      db,
+      "users",
+      user.uid,
+      "files",
+      fileId,
+      "messages"
+    );
+
+    await addDoc(msgRef, {
+      sender: msg.sender,
+      text: msg.text,
+      createdAt: serverTimestamp(),
+    });
+  };
+
+  // Menu click outside handler
   useEffect(() => {
     function handleClickOutside(e) {
       if (
@@ -59,10 +196,11 @@ function useChatLogic() {
     return () => document.removeEventListener("click", handleClickOutside);
   }, [menuOpen]);
 
-  useEffect(() => {
+   useEffect(() => {
     userScrolledUpRef.current = userScrolledUp;
   }, [userScrolledUp]);
 
+  // Scroll handler
   useEffect(() => {
     const container = chatContainerRef.current;
     if (!container) return;
@@ -89,6 +227,7 @@ function useChatLogic() {
     }
   }, [question]);
 
+  // Suggested Q click
   useEffect(() => {
     const handleClick = (e) => {
       const li = e.target.closest(".suggested-questions li");
@@ -100,106 +239,243 @@ function useChatLogic() {
     };
 
     document.addEventListener("click", handleClick);
-
     return () => document.removeEventListener("click", handleClick);
   }, []);
 
-  const handleFileSelect = (selectedFile) => {
-    if (fileName && messages.length > 0) {
-      setShowNewChatModal(true);
-    } else {
-      setFile(selectedFile);
-      handleUpload(selectedFile);
-    }
-    if (file) {
-      console.log(file);
-    }
-  };
+  // File select handler
+const handleFileSelect = (selectedFile) => {
+    setFile(selectedFile);
+    handleUpload(selectedFile);
+};
 
+
+  // Start new chat
   const handleNewChat = () => {
     setMessages([]);
     setFileName(null);
+    setDisplayFileName(null);
+    setDisplayFileId(null);   // <-- clear active id too
     setQuestion("");
-    setFile(null);
+
+    currentFileIdRef.current = null;
+
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleUpload = async (fileToUpload) => {
-    if (!fileToUpload) return;
-    try {
-      setUploading(true);
-      const formData = new FormData();
-      formData.append("file", fileToUpload);
 
-      const uploadRes = await fetch(`${BASE_URL}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-      const uploadData = await uploadRes.json();
-      console.log(uploadData);
 
-      const fileName = fileToUpload.name.replace(/\.pdf$/i, "").trim();
-      await fetch(`${BASE_URL}/extract_text?filename=${fileName}`, {
-        method: "POST",
-      });
+  // 📁 Upload PDF & create Firestore file record
+// --- inside useChatLogic (frontend) ---
 
-      setFileName(fileName);
+// 📁 Upload PDF & create Firestore file record
+const handleUpload = async (fileToUpload) => {
+  if (!fileToUpload) return;
+    setDisplayFileId(null);
+    setDisplayFileName(null);
 
-      await fetch(`${BASE_URL}/extract_text?filename=${fileName}`, {
-        method: "POST",
-      });
+  try {
+    setUploading(true);
 
-      setFileName(fileName);
+    const formData = new FormData();
+    formData.append("file", fileToUpload);
 
-      const introRes = await fetch(`${BASE_URL}/ai_answer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          index_name: fileName,
-          question: "__FIRST_MESSAGE_SUMMARY__",
-          top_k: 3,
-        }),
-      });
+    // 1) Upload PDF
+    const uploadRes = await fetch(`${BASE_URL}/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    const uploadData = await uploadRes.json();
+    const { original_name, saved_filename, path } = uploadData;
 
-      const introData = await introRes.json();
-      const introAnswer = introData.answer || "Document processed.";
+    // 2) Extract + index build
+    const extractRes = await fetch(
+      `${BASE_URL}/extract_text?filename=${encodeURIComponent(saved_filename)}`,
+      { method: "POST" }
+    );
+    const extractData = await extractRes.json();
+    const backendIndexName =
+      extractData.index_name || saved_filename.replace(/\.pdf$/i, "");
 
-      setMessages((prev) => [...prev, { sender: "ai", text: introAnswer }]);
+    setFileName(backendIndexName);
 
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: "ai",
-          text: "❌ Failed to process document. Please try again.",
-        },
-      ]);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSaveEdit = async (idx) => {
-    const newMessageText = editingText.trim();
-    if (!newMessageText) return;
-
-    setMessages((prev) => {
-      const updated = [...prev];
-      updated[idx].text = newMessageText;
-      return updated;
+    // 3) FIRST AI message
+    const introRes = await fetch(`${BASE_URL}/ai_answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        index_name: backendIndexName,
+        question: "__FIRST_MESSAGE_SUMMARY__",
+        top_k: 3,
+      }),
     });
 
-    setMessages((prev) => prev.slice(0, idx + 1));
+    const introData = await introRes.json();
+    const introAnswer = introData.answer || "Unable to process these type of documents.";
+    const risk = extractRisk(introAnswer);
 
-    setEditingIndex(null);
-    setEditingText("");
+    const aiMsg = { sender: "ai", text: introAnswer };
 
-    await handleAskEdited(newMessageText, idx);
-  };
+    // ⛔ DON'T save yet — fileId doesn't exist
+    setMessages([aiMsg]);
 
+    // 4) CREATE Firestore file FIRST
+    const auth = getAuth();
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated");
+
+    const previewText = extractPreviewText(introAnswer);
+
+    const userFilesRef = collection(db, "users", user.uid, "files");
+    const docRef = await addDoc(userFilesRef, {
+      originalName: original_name,
+      savedName: saved_filename,
+      backendPath: path,
+      risk,
+      previewText,
+      indexName: backendIndexName,
+      createdAt: serverTimestamp(),
+    });
+
+    // 🔥 NOW fileId exists
+    currentFileIdRef.current = docRef.id;
+    setDisplayFileId(docRef.id);           // <-- new
+    setDisplayFileName(original_name);     // <-- ensure name also set
+
+    // 5) SAVE first AI message NOW (correct order!)
+    await saveMessage(aiMsg);
+
+    // cleanup UI
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+  } catch (err) {
+    console.error("handleUpload error:", err);
+  } finally {
+    setUploading(false);
+  }
+};
+
+
+
+// 📂 Load file from DB (use savedName / indexName)
+const handleFileSelectFromDB = async (fileData) => {
+  currentFileIdRef.current = fileData.id;
+
+  // Set REAL original file name for sidebar
+  setDisplayFileName(fileData.originalName);
+  setDisplayFileId(fileData.id); // <-- new
+
+  // Keep indexName for backend
+  const indexName = fileData.indexName || (fileData.savedName || "").replace(/\.pdf$/i, "");
+  setFileName(indexName);
+};
+
+
+
+const handleDelete = async (fileData) => {
+  try {
+    const user = getAuth().currentUser;
+    if (!user) return;
+
+    const fileId = fileData.id;
+    const fileRef = doc(db, "users", user.uid, "files", fileId);
+
+    // 🔥 1) DELETE all messages under this file
+    const msgRef = collection(db, "users", user.uid, "files", fileId, "messages");
+    const q = query(msgRef);
+    const snap = await getDocs(q);
+
+    const deletes = snap.docs.map((d) => deleteDoc(d.ref));
+    await Promise.all(deletes); // important
+
+    // 🔥 2) DELETE the backend uploaded file
+    await fetch(`${BASE_URL}/delete_file`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        saved_filename: fileData.savedName,
+        index_name: fileData.indexName,
+      }),
+    });
+
+    // 🔥 3) DELETE the Firestore file document
+    await deleteDoc(fileRef);
+
+    // 🔥 4) Cleanup UI
+    setFiles((prev) => prev.filter((f) => f.id !== fileId));
+
+    if (currentFileIdRef.current === fileId) {
+      currentFileIdRef.current = null;
+      setMessages([]);
+      setFileName(null);
+    }
+
+    setToastMessage("Document deleted");
+    setTimeout(() => setToastMessage(null), 2000);
+
+  } catch (err) {
+    console.error("Delete Error:", err);
+    setToastMessage("Failed to delete");
+  }
+};
+
+
+  // Save edited message
+  // Save edited message + delete following messages + append new AI messages
+const handleSaveEdit = async (idx) => {
+  const newText = editingText.trim();
+  if (!newText) return;
+
+  const user = getAuth().currentUser;
+  if (!user) return;
+
+  const fileId = currentFileIdRef.current;
+  if (!fileId) return;
+
+  const msgRef = collection(
+    db,
+    "users",
+    user.uid,
+    "files",
+    fileId,
+    "messages"
+  );
+
+  // 1️⃣ Load message docs with their IDs
+  const q = query(msgRef, orderBy("createdAt", "asc"));
+  const snap = await getDocs(q);
+  const docs = snap.docs;
+
+  const targetDoc = docs[idx];
+  if (!targetDoc) return;
+
+  // 2️⃣ Update the edited message
+  await updateDoc(targetDoc.ref, {
+    text: newText,
+    updatedAt: serverTimestamp(),
+  });
+
+  // 3️⃣ Delete all messages AFTER the edited one
+  const docsToDelete = docs.slice(idx + 1);
+  for (const d of docsToDelete) {
+    await deleteDoc(d.ref);
+  }
+
+  // 4️⃣ Update UI instantly
+  setMessages((prev) => prev.slice(0, idx + 1).map((m, i) =>
+    i === idx ? { ...m, text: newText } : m
+  ));
+
+  // 5️⃣ Clear edit state
+  setEditingIndex(null);
+  setEditingText("");
+
+  // 6️⃣ Generate new AI response for the edited message
+  await handleAskEdited(newText);
+};
+
+
+  // Ask edited question
   const handleAskEdited = async (questionText) => {
     setLoading(true);
     setIsStreaming(false);
@@ -224,19 +500,23 @@ function useChatLogic() {
         aiIndex = prev.length;
         return [...prev, { sender: "ai", text: "" }];
       });
-
-      setIsStreaming(true);
+       setIsStreaming(true);
       setUserScrolledUp(false);
 
       typeWriterEffect(
         answer,
-        (partial) =>
+        (partial) => {
           setMessages((prev) => {
             const updated = [...prev];
             updated[aiIndex] = { sender: "ai", text: partial };
             return updated;
-          }),
-        () => setIsStreaming(false)
+          });
+        },
+        () => {
+           () => setIsStreaming(false)
+
+          saveMessage({ sender: "ai", text: answer });
+        }
       );
     } catch (error) {
       console.error(error);
@@ -245,6 +525,7 @@ function useChatLogic() {
     }
   };
 
+  // Streaming typewriter effect
   const typeWriterEffect = (fullText, onUpdate, onDone) => {
     let index = 0;
     stopStreamingRef.current = false;
@@ -271,29 +552,63 @@ function useChatLogic() {
 
         setTimeout(tick, 8);
       } else {
-        setIsStreaming(false);
+         setIsStreaming(false);
         onDone?.();
       }
     };
-
-    setIsStreaming(true);
+      setIsStreaming(true);
     userScrolledUpRef.current = false;
 
     tick();
   };
 
-  const handleRegenerate = async (idx) => {
-    const prevUserMsg = messages[idx - 1];
+  // Regenerate response
+  // Regenerate AI response: delete old AI reply + write new one
+const handleRegenerate = async (aiIdx) => {
+  const user = getAuth().currentUser;
+  if (!user) return;
 
-    if (!prevUserMsg || prevUserMsg.sender !== "user") return;
+  const fileId = currentFileIdRef.current;
+  if (!fileId) return;
 
-    const questionText = prevUserMsg.text;
+  const prevUserMsg = messages[aiIdx - 1];
+  const prevAiMsg = messages[aiIdx];
 
-    setMessages((prev) => prev.slice(0, idx));
+  if (!prevUserMsg || prevUserMsg.sender !== "user") return;
+  if (!prevAiMsg || prevAiMsg.sender !== "ai") return;
 
-    await handleAskEdited(questionText);
-  };
+  const msgRef = collection(
+    db,
+    "users",
+    user.uid,
+    "files",
+    fileId,
+    "messages"
+  );
 
+  // Load all messages (to get doc IDs)
+  const q = query(msgRef, orderBy("createdAt", "asc"));
+  const snap = await getDocs(q);
+  const docs = snap.docs;
+
+  const aiDoc = docs[aiIdx];
+  if (!aiDoc) return;
+
+  // 🧨 Delete the old AI reply from Firestore
+  await deleteDoc(aiDoc.ref);
+
+  // 🔥 Remove from UI
+  setMessages((prev) => {
+    const updated = [...prev];
+    updated.splice(aiIdx, 1);
+    return updated;
+  });
+
+  // 🆕 Now generate a fresh AI response
+  await handleAskEdited(prevUserMsg.text);
+};
+
+  // Toast
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2000);
@@ -302,18 +617,23 @@ function useChatLogic() {
   const handleCopy = async (html, isAiMessage = false) => {
     try {
       await handleCopyMarkdown(html, isAiMessage);
-      showToast("Copied MD!");
+      showToast("Copied!");
     } catch (e) {
+      showToast("e");
       console.log(e);
-      showToast("Copied MD!");
+      
     }
   };
 
+
+  // MAIN ASK FUNCTION — SAVES USER & AI MESSAGES
   const handleAsk = async () => {
     if (!question.trim()) return;
 
-    const userMessage = question;
-    setMessages((prev) => [...prev, { sender: "user", text: userMessage }]);
+    const userMessageObj = { sender: "user", text: question };
+    setMessages((prev) => [...prev, userMessageObj]);
+    saveMessage(userMessageObj);
+
     setQuestion("");
     setLoading(true);
     setIsStreaming(false);
@@ -324,7 +644,7 @@ function useChatLogic() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           index_name: fileName,
-          question: userMessage,
+          question: userMessageObj.text,
           top_k: 3,
         }),
       });
@@ -332,14 +652,13 @@ function useChatLogic() {
       const data = await res.json();
       const answer = data.answer || "No answer received.";
 
-      let aiIndex = null;
+      let aiIndex;
 
       setMessages((prev) => {
         aiIndex = prev.length;
         return [...prev, { sender: "ai", text: "" }];
       });
-
-      setIsStreaming(true);
+       setIsStreaming(true);
       setUserScrolledUp(false);
 
       typeWriterEffect(
@@ -352,7 +671,7 @@ function useChatLogic() {
           });
         },
         () => {
-          setIsStreaming(false);
+          saveMessage({ sender: "ai", text: answer });
         }
       );
     } catch (err) {
@@ -403,6 +722,18 @@ function useChatLogic() {
     handleRegenerate,
     handleCopy,
     handleAsk,
+    handleFileSelectFromDB,
+    files,
+    handleDelete,
+    messageLoading,
+    filesLoading,
+    displayFileName,
+    setDisplayFileName,
+    displayFileId,
+    setDisplayFileId,
+    currentFileIdRef,
+    setFileName,
+    setMessages
   };
 }
 

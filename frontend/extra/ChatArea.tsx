@@ -1,8 +1,26 @@
+// src/components/ChatArea.tsx
 import React from "react";
-import MessageBubble from "./MessageBubble";
-import "./ChatArea.css";
+import MessageBubble from "../src/components/MessageBubble";
+import { Message } from "../src/types/types";
 
-function ChatArea({
+interface ChatAreaProps {
+  chatContainerRef: React.RefObject<HTMLDivElement>;
+  messages: Message[];
+  loading: boolean;
+  uploading: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  handleFileSelect: (file: File | null) => void;
+  editingIndex: number | null;
+  editingText: string;
+  setEditingIndex: (index: number | null) => void;
+  setEditingText: (text: string) => void;
+  handleSaveEdit: (index: number) => void;
+  handleCopy: (text: string, isAi: boolean) => void;
+  handleRegenerate: (index: number) => void;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
+}
+
+const ChatArea: React.FC<ChatAreaProps> = ({
   chatContainerRef,
   messages,
   loading,
@@ -17,14 +35,45 @@ function ChatArea({
   handleCopy,
   handleRegenerate,
   messagesEndRef,
-  messageLoading,
-}) {
+}) => {
   return (
     <div ref={chatContainerRef} className="tidio-chat-area">
-      {uploading || messageLoading ? (
-        <div className="center-loading">
-          <div className="spinner"></div>
-          <p>Processing document...</p>
+      {messages.length === 0 ? (
+        <div className="welcome-screen">
+          <div className="welcome-icon">⚖️</div>
+          <h2>Welcome to LegalAI Assistant</h2>
+          <p>Upload a legal document to get started, or ask me anything!</p>
+
+          <div className="welcome-upload">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFileSelect(e.target.files?.[0] || null)}
+              style={{ display: "none" }}
+            />
+            <button
+              className="upload-btn-large"
+              onClick={() => fileInputRef.current?.click()}
+              type="button"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+              Choose PDF Document
+            </button>
+            {uploading && (
+              <div className="uploading-indicator">
+                <div className="spinner"></div>
+                <span>Processing document...</span>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="messages-container">
@@ -42,7 +91,6 @@ function ChatArea({
               handleRegenerate={handleRegenerate}
             />
           ))}
-
           {loading && (
             <div className="message message-ai">
               <div className="message-avatar">
@@ -64,7 +112,6 @@ function ChatArea({
               </div>
             </div>
           )}
-
           {uploading && (
             <div className="message message-ai">
               <div className="message-avatar">
@@ -87,12 +134,11 @@ function ChatArea({
               </div>
             </div>
           )}
-
           <div ref={messagesEndRef} />
         </div>
       )}
     </div>
   );
-}
+};
 
 export default ChatArea;

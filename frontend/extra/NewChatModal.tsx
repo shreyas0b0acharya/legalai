@@ -1,15 +1,22 @@
+// src/components/NewChatModal.tsx
 import React from "react";
-import "./newchatmodal.css";
 
-function NewChatModal({
+interface NewChatModalProps {
+  fileName: string | null;
+  setShowNewChatModal: (show: boolean) => void;
+  handleNewChat: () => void;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+}
+
+const NewChatModal: React.FC<NewChatModalProps> = ({
   fileName,
   setShowNewChatModal,
   handleNewChat,
   fileInputRef,
-}) {
+}) => {
   return (
     <div className="modal-overlay" onClick={() => setShowNewChatModal(false)}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <div className="modal-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path
@@ -20,32 +27,36 @@ function NewChatModal({
             />
           </svg>
         </div>
-
         <h3>Start New Chat?</h3>
-
         <p>
-          You're currently chatting with <strong>{fileName}</strong>. Do you want
-          to start a new conversation with the new document?
+          You're currently chatting with <strong>{fileName}</strong>. Do you
+          want to start a new conversation with the new document?
         </p>
 
         <div className="modal-actions">
+          {/* CONTINUE SAME CHAT */}
           <button
             className="modal-btn modal-btn-secondary"
             onClick={() => {
               setShowNewChatModal(false);
               fileInputRef.current?.click();
             }}
+            type="button"
           >
             Continue Current Chat
           </button>
 
+          {/* START NEW CHAT */}
           <button
             className="modal-btn modal-btn-primary"
             onClick={() => {
               setShowNewChatModal(false);
               handleNewChat();
-              setTimeout(() => fileInputRef.current?.click(), 50);
+              setTimeout(() => {
+                fileInputRef.current?.click();
+              }, 50);
             }}
+            type="button"
           >
             Start New Chat
           </button>
@@ -53,6 +64,6 @@ function NewChatModal({
       </div>
     </div>
   );
-}
+};
 
 export default NewChatModal;

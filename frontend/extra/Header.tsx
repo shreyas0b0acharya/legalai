@@ -1,8 +1,23 @@
+// src/components/Header.tsx
 import React from "react";
 import { signOut } from "firebase/auth";
-import { auth } from "../../firebase"; // Make sure this path is correct
+import { auth } from "../firebase"; // Make sure this path is correct (assumed .ts)
+import { User } from "firebase/auth";
+import { Message } from "../src/types/types";
 
-function Header({
+interface HeaderProps {
+  theme: "light" | "dark";
+  toggleTheme: () => void;
+  fileName: string | null;
+  messages: Message[];
+  menuOpen: boolean;
+  setMenuOpen: (open: boolean) => void;
+  menuButtonRef: React.RefObject<HTMLButtonElement>;
+  menuRef: React.RefObject<HTMLDivElement>;
+  handleNewChat: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({
   theme,
   toggleTheme,
   fileName,
@@ -12,14 +27,14 @@ function Header({
   menuButtonRef,
   menuRef,
   handleNewChat,
-}) {
-  const user = auth.currentUser; // Get current logged-in user
+}) => {
+  const user: User | null = auth.currentUser; // Get current logged-in user
 
-  const handleLogout = async () => {
+  const handleLogout = async (): Promise<void> => {
     try {
       await signOut(auth);
       setMenuOpen(false);
-      // No need to navigate — main.jsx already listens to auth state and shows Login page
+      // No need to navigate — main.tsx already listens to auth state and shows Login page
     } catch (error) {
       console.error("Logout failed:", error);
     }
@@ -62,6 +77,7 @@ function Header({
               className="menu-btn"
               ref={menuButtonRef}
               onClick={() => setMenuOpen(!menuOpen)}
+              type="button"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -102,7 +118,7 @@ function Header({
 
                 {/* NEW CHAT */}
                 {messages.length > 0 && (
-                  <button className="menu-item" onClick={handleNewChat}>
+                  <button className="menu-item" onClick={handleNewChat} type="button">
                     <div className="menu-icon">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path
@@ -124,6 +140,7 @@ function Header({
                     toggleTheme();
                     setMenuOpen(false);
                   }}
+                  type="button"
                 >
                   <div className="menu-icon">
                     {theme === "dark" ? (
@@ -149,7 +166,7 @@ function Header({
                 </button>
 
                 {/* LOGOUT */}
-                <button className="menu-item logout-item" onClick={handleLogout}>
+                <button className="menu-item logout-item" onClick={handleLogout} type="button">
                   <div className="menu-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                       <path
@@ -169,6 +186,6 @@ function Header({
       </div>
     </div>
   );
-}
+};
 
 export default Header;
